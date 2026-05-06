@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# claude-update — 执行 claude update 并打印 CHANGELOG 中本次更新覆盖的版本说明
+set -euo pipefail
+
+CHANGELOG_URL="${CLAUDE_UPDATE_CHANGELOG_URL:-https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md}"
+
+if [[ -t 1 ]]; then
+  BOLD=$'\033[1m'; DIM=$'\033[2m'
+  GREEN=$'\033[0;32m'; CYAN=$'\033[0;36m'; YELLOW=$'\033[0;33m'; MAGENTA=$'\033[0;35m'
+  RESET=$'\033[0m'
+else
+  BOLD=""; DIM=""; GREEN=""; CYAN=""; YELLOW=""; MAGENTA=""; RESET=""
+fi
+
+die() { printf '%sclaude-update: %s%s\n' "$YELLOW" "$*" "$RESET" >&2; exit 1; }
+
+command -v claude >/dev/null 2>&1 || die "未找到 claude CLI，请先安装 Claude Code"
+command -v curl   >/dev/null 2>&1 || die "未找到 curl"
+
+current_version() {
+  claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true
+}
+
+old_version="$(current_version)"
+printf '%s当前版本：%s%s%s\n' "$CYAN" "$BOLD" "${old_version:-未安装}" "$RESET"
+
+printf '%s▶ 执行 claude update ...%s\n' "$CYAN" "$RESET"
+update_output="$(claude update 2>&1)" || {
+  printf '%s\n' "$update_output"
+  die "claude update 执行失败"
+}
+printf '%s%s%s\n' "$DIM" "$update_output" "$RESET"
+
+new_version="$(current_version)"
+printf '%s更新后版本：%s%s%s\n' "$CYAN" "$BOLD" "${new_version:-未知}" "$RESET"
+
+if [[ -z "$new_version" ]]; then
+  die "无法获取更新后的版本号，跳过 CHANGELOG 展示"
+fi
+
+if [[ -n "$old_version" && "$old_version" == "$new_version" ]]; then
+  printf '%s✓ 已是最新版本，仍展示该版本的 CHANGELOG%s\n' "$GREEN" "$RESET"
+fi
+
+printf '%s▶ 拉取 CHANGELOG ...%s\n' "$CYAN" "$RESET"
+changelog="$(curl -fsSL --max-time 15 "$CHANGELOG_URL")" || die "无法获取 CHANGELOG: $CHANGELOG_URL"
+
+# 切出 (old_version, new_version] 区间。
+# 用 semver 数值比较，避免 old 不在 CHANGELOG 中时一直打到底。
+section="$(printf '%s\n' "$changelog" | awk -v new="$new_version" -v old="${old_version:-0.0.0}" '
+  function ver_num(v,    a) {
+    if (split(v, a, ".") != 3) return -1
+    return a[1]*1000000 + a[2]*1000 + a[3]
+  }
+  BEGIN { new_n = ver_num(new); old_n = ver_num(old) }
+  /^## / {
+    v = $2
+    n = ver_num(v)
+    if (n < 0)            { next }      # 不像版本号的标题，忽略
+    if (n == new_n)       { printing = 1 }
+    else if (n <= old_n)  { exit }      # 已经回到旧版本或更早，停
+  }
+  printing { print }
+')"
+
+if [[ -z "${section// /}" ]]; then
+  printf '%s未在 CHANGELOG 中找到版本 %s 的说明%s\n' "$YELLOW" "$new_version" "$RESET"
+  exit 0
+fi
+
+printf '\n%s%s━━━ 更新内容 ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET"
+
+# 简单高亮：## 版本号 标红，- 列表项前缀加色
+printf '%s\n' "$section" | awk -v BOLD="$BOLD" -v MAGENTA="$MAGENTA" -v GREEN="$GREEN" -v RESET="$RESET" '
+  /^## / { printf "%s%s%s%s\n", BOLD, MAGENTA, $0, RESET; next }
+  /^- /  { sub(/^- /, GREEN "• " RESET); print; next }
+  { print }
+'
