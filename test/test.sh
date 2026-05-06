@@ -67,6 +67,32 @@ case_end() {
   PASS=$((PASS + 1))
 }
 
+# Like run_script but captures stdout and stderr SEPARATELY.
+# Populates OUT_OUT, OUT_ERR, STATUS. (No --no-pager: we want pipe-mode behavior.)
+run_script_split() {
+  local pre="$1" post="$2" upd_exit="$3"
+  shift 3
+
+  local tmp; tmp=$(mktemp -d -t claude-update-test.XXXXXX)
+  local versions="$tmp/versions" state="$tmp/state"
+  local of="$tmp/o" ef="$tmp/e"
+  printf '%s\n%s\n%s\n' "$pre" "$post" "$upd_exit" > "$versions"
+
+  set +e
+  PATH="$TEST_DIR/stub:$PATH" \
+  CLAUDE_UPDATE_CHANGELOG_URL="file://$FIXTURE" \
+  STUB_STATE_FILE="$state" \
+  STUB_VERSIONS_FILE="$versions" \
+  "$SCRIPT" "$@" >"$of" 2>"$ef"
+  STATUS=$?
+  set -e
+
+  OUT_OUT=$(cat "$of")
+  OUT_ERR=$(cat "$ef")
+  OUTPUT="$OUT_OUT"$'\n'"$OUT_ERR"
+  rm -rf "$tmp"
+}
+
 # ---------------------------------------------------------------------------
 # Case 1: happy path — normal upgrade across several versions
 # ---------------------------------------------------------------------------
@@ -223,6 +249,38 @@ case_start "--since with non-semver value rejects with helpful error"
 run_script "2.1.129" "2.1.129" "0" --since not-a-version
 assert "since-bad" "exits 1"         '[[ "$STATUS" == "1" ]]' && \
 assert "since-bad" "explains format" 'grep -q -- "--since expects" <<< "$OUTPUT"' && \
+case_end
+
+# ---------------------------------------------------------------------------
+# Case 13a: pipe mode — chrome on stderr, raw Markdown on stdout
+# ---------------------------------------------------------------------------
+case_start "pipe mode: stdout = raw Markdown, stderr = status/banner"
+run_script_split "2.1.122" "2.1.129" "0"
+assert "pipe" "exits 0"                  '[[ "$STATUS" == "0" ]]' && \
+assert "pipe" "stdout has 2.1.129"       'grep -q "## 2.1.129" <<< "$OUT_OUT"' && \
+assert "pipe" "stdout has 2.1.123"       'grep -q "## 2.1.123" <<< "$OUT_OUT"' && \
+assert "pipe" "stdout keeps - bullet"    'grep -q "^- 129 line a" <<< "$OUT_OUT"' && \
+assert "pipe" "stdout has no • bullet"   '! grep -q "•" <<< "$OUT_OUT"' && \
+assert "pipe" "stdout no banner"         '! grep -q "what'\''s new" <<< "$OUT_OUT"' && \
+assert "pipe" "stdout no current msg"    '! grep -q "current version:" <<< "$OUT_OUT"' && \
+assert "pipe" "stdout no ANSI codes"     '! LC_ALL=C grep -q $'\''\033'\'' <<< "$OUT_OUT"' && \
+assert "pipe" "stderr has current msg"   'grep -q "current version: 2.1.122" <<< "$OUT_ERR"' && \
+assert "pipe" "stderr has banner"        'grep -q "what'\''s new" <<< "$OUT_ERR"' && \
+assert "pipe" "stderr has stub line"     'grep -q "stub: simulating" <<< "$OUT_ERR"' && \
+case_end
+
+# ---------------------------------------------------------------------------
+# Case 13b: pipe mode + --no-update — same routing, no update progress
+# ---------------------------------------------------------------------------
+case_start "pipe mode + --no-update: clean Markdown only"
+run_script_split "2.1.129" "9.9.9" "1" --no-update
+assert "pipe-noup" "exits 0"             '[[ "$STATUS" == "0" ]]' && \
+assert "pipe-noup" "stdout has 2.1.129"  'grep -q "## 2.1.129" <<< "$OUT_OUT"' && \
+assert "pipe-noup" "stdout has 2.1.120"  'grep -q "## 2.1.120" <<< "$OUT_OUT"' && \
+assert "pipe-noup" "no stub on stdout"   '! grep -q "stub:" <<< "$OUT_OUT"' && \
+assert "pipe-noup" "no stub on stderr"   '! grep -q "stub:" <<< "$OUT_ERR"' && \
+assert "pipe-noup" "no chrome on stdout" '! grep -q "current version" <<< "$OUT_OUT"' && \
+assert "pipe-noup" "first stdout line ##" '[[ "$(printf "%s\n" "$OUT_OUT" | grep -m1 -v "^$")" =~ ^\#\# ]]' && \
 case_end
 
 # ---------------------------------------------------------------------------

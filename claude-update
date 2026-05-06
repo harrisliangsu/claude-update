@@ -39,6 +39,14 @@ Examples:
   claude-update -n --since 2.1.120 # show 2.1.120..current, no update
   claude-update --since 2.1.120    # update, then show 2.1.120..new
 
+Pipe mode:
+  When stdout is not a terminal, status lines and `claude update`
+  progress are routed to stderr and the section is emitted as raw
+  Markdown (no ANSI, original `- ` bullets):
+
+      claude-update -n | claude -p '翻译为简体中文'
+      claude-update -n --since 2.1.120 > whats-new.md
+
 Environment variables:
   CLAUDE_UPDATE_CHANGELOG_URL   override CHANGELOG source
   CLAUDE_UPDATE_PAGER / PAGER   pager command for --combined (default "less -RFX")
@@ -52,6 +60,16 @@ if [[ -t 1 ]]; then
   RESET=$'\033[0m'
 else
   BOLD=""; DIM=""; GREEN=""; CYAN=""; YELLOW=""; MAGENTA=""; RESET=""
+fi
+
+# fd3 = "chrome" channel: status lines, banners, `claude update` progress.
+# When stdout is a TTY, fd3 → stdout so the user sees inline progress. When
+# piped/redirected, fd3 → stderr so stdout stays pure Markdown for consumers
+# like `claude-update -n | claude -p '翻译为中文'`.
+if [[ -t 1 ]]; then
+  exec 3>&1
+else
+  exec 3>&2
 fi
 
 NO_PAGER=0
@@ -98,22 +116,22 @@ curl -fsSL --max-time 15 "$CHANGELOG_URL" > "$changelog_tmp" 2>/dev/null &
 fetch_pid=$!
 
 old_version="$(current_version)"
-printf '%scurrent version: %s%s%s\n' "$CYAN" "$BOLD" "${old_version:-not installed}" "$RESET"
+printf '%scurrent version: %s%s%s\n' "$CYAN" "$BOLD" "${old_version:-not installed}" "$RESET" >&3
 
 if [[ "$NO_UPDATE" == "1" ]]; then
   # View-only mode: skip `claude update`, but keep the background CHANGELOG fetch.
   new_version="$old_version"
 else
-  # Stream `claude update` straight to the terminal so users see real-time progress.
-  printf '%s▶ running claude update ...%s\n' "$CYAN" "$RESET"
-  if ! claude update; then
+  # Stream `claude update` to the chrome channel (stdout in TTY mode, stderr in pipe mode).
+  printf '%s▶ running claude update ...%s\n' "$CYAN" "$RESET" >&3
+  if ! claude update >&3; then
     kill "$fetch_pid" 2>/dev/null || true
     wait "$fetch_pid" 2>/dev/null || true
     die "claude update failed"
   fi
 
   new_version="$(current_version)"
-  printf '%snew version:     %s%s%s\n' "$CYAN" "$BOLD" "${new_version:-unknown}" "$RESET"
+  printf '%snew version:     %s%s%s\n' "$CYAN" "$BOLD" "${new_version:-unknown}" "$RESET" >&3
 fi
 
 if [[ -z "$new_version" ]]; then
@@ -131,7 +149,7 @@ fi
 
 # Status line: only when we actually ran update and ended up at the same version.
 if [[ "$NO_UPDATE" == "0" && -z "$SINCE" && -n "$old_initial" && "$old_initial" == "$new_version" ]]; then
-  printf '%s✓ already on latest; browse earlier versions with :n / :p%s\n' "$GREEN" "$RESET"
+  printf '%s✓ already on latest; browse earlier versions with :n / :p%s\n' "$GREEN" "$RESET" >&3
 fi
 
 # Broadening rule: when the slice would otherwise contain only $new_version
@@ -150,7 +168,7 @@ if [[ -z "$old_initial" ]]; then
   old_version="$new_version"
 fi
 
-printf '%s▶ fetching CHANGELOG ...%s\n' "$CYAN" "$RESET"
+printf '%s▶ fetching CHANGELOG ...%s\n' "$CYAN" "$RESET" >&3
 if ! wait "$fetch_pid"; then
   die "could not fetch CHANGELOG: $CHANGELOG_URL"
 fi
@@ -197,7 +215,7 @@ section="$(awk -v new="$new_version" -v old="$old_version" '
 # awk only emits lines copied from the source, so it never produces whitespace-only
 # output that the looser check would have caught.
 if [[ -z "$section" ]]; then
-  printf '%sCHANGELOG has no entry for version %s%s\n' "$YELLOW" "$new_version" "$RESET"
+  printf '%sCHANGELOG has no entry for version %s%s\n' "$YELLOW" "$new_version" "$RESET" >&3
   exit 0
 fi
 
@@ -206,10 +224,16 @@ if [[ "$first_install" == "1" ]]; then
 fi
 
 # Highlight ## version headings (bold magenta) and "- " bullets (green).
+# When colors are empty (non-TTY / piped), emit raw Markdown — keep `- ` bullets
+# and skip the `• ` rewrite so pipe consumers (e.g. translators) see clean MD.
 highlight() {
   awk -v BOLD="$BOLD" -v MAGENTA="$MAGENTA" -v GREEN="$GREEN" -v RESET="$RESET" '
     /^## / { printf "%s%s%s%s\n", BOLD, MAGENTA, $0, RESET; next }
-    /^- /  { sub(/^- /, GREEN "• " RESET); print; next }
+    /^- / {
+      if (GREEN != "") sub(/^- /, GREEN "• " RESET)
+      print
+      next
+    }
     { print }
   '
 }
@@ -241,7 +265,7 @@ if want_interactive && [[ "$COMBINED" == "0" ]] && command -v less >/dev/null 2>
       }
       out && /^- / {
         line = $0
-        sub(/^- /, GREEN "• " RESET, line)
+        if (GREEN != "") sub(/^- /, GREEN "• " RESET, line)
         print line > out
         next
       }
@@ -259,8 +283,8 @@ else
     # input; eval is used so users can pass quoted arguments (e.g. "less -Pmy prompt").
     pager_cmd="${CLAUDE_UPDATE_PAGER:-${PAGER:-less -RFX}}"
   fi
-  {
-    printf '\n%s%s━━━ what'\''s new ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET"
-    printf '%s\n' "$section" | highlight
-  } | if [[ -n "$pager_cmd" ]]; then eval "$pager_cmd"; else cat; fi
+  # Banner is chrome — push to fd3 so pipe consumers don't see it before the
+  # actual Markdown. In TTY mode fd3 → stdout so it still appears inline.
+  printf '\n%s%s━━━ what'\''s new ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET" >&3
+  printf '%s\n' "$section" | highlight | if [[ -n "$pager_cmd" ]]; then eval "$pager_cmd"; else cat; fi
 fi
