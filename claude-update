@@ -4,26 +4,39 @@ set -euo pipefail
 
 CHANGELOG_URL="${CLAUDE_UPDATE_CHANGELOG_URL:-https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md}"
 
-NO_PAGER=0
 usage() {
   cat <<'EOF'
 用法: claude-update [选项]
 
-执行 `claude update`，然后打印 CHANGELOG 中 (旧版本, 新版本] 的更新说明。
-更新说明默认走 pager（less -RFX）以便滚动浏览。
+执行 `claude update`，然后展示 CHANGELOG 中 (旧版本, 新版本] 的更新说明。
+默认进入「逐版本浏览」模式：每个版本一个独立页面，可单独滚动，
+按键在版本之间切换。
+
+逐版本浏览快捷键（基于 less 多文件模式）:
+  :n / Space      下一版本
+  :p              上一版本
+  ↑ ↓ PgUp PgDn   当前版本内滚动
+  g / G           跳到首/末行
+  /pattern        搜索
+  q               退出
 
 选项:
-  -P, --no-pager   直接打印，不走 pager
+  -c, --combined   把所有版本合并到一页里滚动（旧行为）
+  -P, --no-pager   直接打印全部，不进入交互
   -h, --help       显示本帮助
 
 环境变量:
   CLAUDE_UPDATE_CHANGELOG_URL   覆盖 CHANGELOG 来源
-  CLAUDE_UPDATE_PAGER / PAGER   覆盖 pager 命令（默认 "less -RFX"）
+  CLAUDE_UPDATE_PAGER / PAGER   --combined 模式下的 pager（默认 "less -RFX"）
 EOF
 }
+
+NO_PAGER=0
+COMBINED=0
 for arg in "$@"; do
   case "$arg" in
     -P|--no-pager) NO_PAGER=1 ;;
+    -c|--combined) COMBINED=1 ;;
     -h|--help)     usage; exit 0 ;;
     *) printf 'claude-update: 未知参数: %s\n\n' "$arg" >&2; usage >&2; exit 2 ;;
   esac
@@ -93,22 +106,54 @@ if [[ -z "${section// /}" ]]; then
   exit 0
 fi
 
-# 简单高亮：## 版本号 标红，- 列表项前缀加色
-highlighted="$(printf '%s\n' "$section" | awk \
-  -v BOLD="$BOLD" -v MAGENTA="$MAGENTA" -v GREEN="$GREEN" -v RESET="$RESET" '
-  /^## / { printf "%s%s%s%s\n", BOLD, MAGENTA, $0, RESET; next }
-  /^- /  { sub(/^- /, GREEN "• " RESET); print; next }
-  { print }
-')"
+# 高亮函数：## 版本号 标红，- 列表项前缀加色。
+highlight() {
+  awk -v BOLD="$BOLD" -v MAGENTA="$MAGENTA" -v GREEN="$GREEN" -v RESET="$RESET" '
+    /^## / { printf "%s%s%s%s\n", BOLD, MAGENTA, $0, RESET; next }
+    /^- /  { sub(/^- /, GREEN "• " RESET); print; next }
+    { print }
+  '
+}
 
-# 选 pager：非 TTY 或 --no-pager 时直通；否则用 CLAUDE_UPDATE_PAGER / PAGER / less -RFX。
-# less 选项：-R 保留 ANSI 颜色，-F 内容不足一屏直接退出，-X 退出后保留输出不清屏。
-pager_cmd=""
-if [[ "$NO_PAGER" == "0" && -t 1 ]]; then
-  pager_cmd="${CLAUDE_UPDATE_PAGER:-${PAGER:-less -RFX}}"
+want_interactive() {
+  [[ "$NO_PAGER" == "0" && -t 1 ]]
+}
+
+if want_interactive && [[ "$COMBINED" == "0" ]] && command -v less >/dev/null 2>&1; then
+  # 逐版本浏览：把每个版本切到独立临时文件，交给 less 多文件模式。
+  tmpdir="$(mktemp -d -t claude-update.XXXXXX)"
+  trap 'rm -rf "$tmpdir"' EXIT
+
+  # 切片：每个版本一个文件，文件名就是版本号（less prompt %f 显示更干净）。
+  # 按 awk 的输出顺序回传到 version_files；less 按命令行参数顺序遍历，无需字典序。
+  # 用 while read 循环替代 mapfile 以兼容 bash 3.2（macOS 系统 bash）。
+  version_files=()
+  while IFS= read -r f; do version_files+=("$f"); done < <(
+    printf '%s\n' "$section" | awk -v dir="$tmpdir" '
+      /^## / {
+        if (out) close(out)
+        out = sprintf("%s/%s", dir, $2)
+        print out
+      }
+      out { print > out }
+    '
+  )
+
+  for f in "${version_files[@]}"; do
+    highlight < "$f" > "$f.colored" && mv "$f.colored" "$f"
+  done
+
+  # less prompt：%f 当前文件名（即版本号），%i 当前序号，%m 总数。
+  prompt="Claude Code %f   (%i/%m)   :n 下一版  :p 上一版  q 退出"
+  less -R --prompt="$prompt" "${version_files[@]}"
+else
+  # --combined / --no-pager / 非 TTY / 没有 less：合并打印，可选走 pager。
+  pager_cmd=""
+  if want_interactive; then
+    pager_cmd="${CLAUDE_UPDATE_PAGER:-${PAGER:-less -RFX}}"
+  fi
+  {
+    printf '\n%s%s━━━ 更新内容 ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET"
+    printf '%s\n' "$section" | highlight
+  } | if [[ -n "$pager_cmd" ]]; then eval "$pager_cmd"; else cat; fi
 fi
-
-{
-  printf '\n%s%s━━━ 更新内容 ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET"
-  printf '%s\n' "$highlighted"
-} | if [[ -n "$pager_cmd" ]]; then eval "$pager_cmd"; else cat; fi

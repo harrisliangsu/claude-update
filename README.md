@@ -9,17 +9,27 @@
 ## 使用
 
 ```bash
-./claude-update              # 默认走 pager，可上下滚动
-./claude-update --no-pager   # 直接打印
+./claude-update              # 默认：逐版本浏览（每个版本独立一页）
+./claude-update --combined   # 合并所有版本到一页里滚动
+./claude-update --no-pager   # 直接打印全部，不进入交互
 ./claude-update -h           # 帮助
 ```
 
-更新说明默认通过 `less -RFX` 展示：
-- 不足一屏会直接退出（不进入交互），不打扰短更新
-- 超过一屏可用 `↑/↓/Space/PgDn/q` 滚动浏览，颜色高亮保留
-- 退出 less 后输出仍留在终端
+### 逐版本浏览（默认）
 
-非 TTY（管道、CI）下自动跳过 pager。
+把 `(旧版本, 新版本]` 区间内的每个版本切到独立页面，交给 `less` 多文件模式。
+状态栏会显示 `(2/5)` 这样的进度。
+
+| 按键 | 作用 |
+| --- | --- |
+| `:n` 或 `Space` | 下一版本 |
+| `:p` | 上一版本 |
+| `↑ ↓ PgUp PgDn` | 当前版本内滚动 |
+| `g` / `G` | 跳到首/末行 |
+| `/pattern` | 搜索 |
+| `q` | 退出 |
+
+非 TTY（管道、CI）下自动回退到直接打印。
 
 输出示例：
 
@@ -58,7 +68,8 @@ PREFIX=/usr/local ./install.sh     # 或自定义前缀
 
 - `claude` CLI
 - `curl`
-- `awk`、`bash 4+`
+- `awk`、`bash 3.2+`（macOS 系统 bash 即可）
+- `less`（逐版本浏览模式需要；缺失时会回退到合并模式）
 
 ## 许可
 
