@@ -168,6 +168,71 @@ assert "bad" "prints usage"          'grep -q "Usage:" <<< "$OUTPUT"' && \
 case_end
 
 # ---------------------------------------------------------------------------
+# Case 9: --no-update — skip claude update, show current version's section
+# ---------------------------------------------------------------------------
+case_start "--no-update: skips claude update, shows current version only"
+# post/upd_exit are intentionally unreachable values — if --no-update accidentally
+# invokes the stub the test will fail loudly via the assertions below.
+run_script "2.1.129" "9.9.9" "1" --no-update
+assert "noup" "exits 0"              '[[ "$STATUS" == "0" ]]' && \
+assert "noup" "shows current"        'grep -q "current version: 2.1.129" <<< "$OUTPUT"' && \
+assert "noup" "skips update msg"     '! grep -q "running claude update" <<< "$OUTPUT"' && \
+assert "noup" "stub never invoked"   '! grep -q "stub: simulating" <<< "$OUTPUT"' && \
+assert "noup" "no new-version line"  '! grep -q "^new version:" <<< "$OUTPUT"' && \
+assert "noup" "no already-on-latest" '! grep -q "already on latest" <<< "$OUTPUT"' && \
+assert "noup" "shows 2.1.129"        'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
+assert "noup" "no 2.1.128"           '! grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+case_end
+
+# ---------------------------------------------------------------------------
+# Case 10: --no-update --since X.Y.Z — view a range without updating
+# ---------------------------------------------------------------------------
+case_start "--no-update --since 2.1.123: shows (2.1.123, 2.1.129] without updating"
+run_script "2.1.129" "9.9.9" "1" --no-update --since 2.1.123
+assert "noup-since" "exits 0"          '[[ "$STATUS" == "0" ]]' && \
+assert "noup-since" "no update call"   '! grep -q "stub: simulating" <<< "$OUTPUT"' && \
+assert "noup-since" "includes 2.1.129" 'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
+assert "noup-since" "includes 2.1.128" 'grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+assert "noup-since" "includes 2.1.126" 'grep -q "## 2.1.126" <<< "$OUTPUT"' && \
+assert "noup-since" "excludes 2.1.123" '! grep -q "## 2.1.123" <<< "$OUTPUT"' && \
+case_end
+
+# ---------------------------------------------------------------------------
+# Case 11: --since with normal update — overrides the lower bound
+# ---------------------------------------------------------------------------
+case_start "--since 2.1.126 (with update 2.1.122 → 2.1.129): excludes 126 and below"
+run_script "2.1.122" "2.1.129" "0" --since 2.1.126
+assert "since" "exits 0"             '[[ "$STATUS" == "0" ]]' && \
+assert "since" "ran update"          'grep -q "stub: simulating" <<< "$OUTPUT"' && \
+assert "since" "includes 2.1.129"    'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
+assert "since" "includes 2.1.128"    'grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+assert "since" "excludes 2.1.126"    '! grep -q "## 2.1.126" <<< "$OUTPUT"' && \
+assert "since" "excludes 2.1.123"    '! grep -q "## 2.1.123" <<< "$OUTPUT"' && \
+case_end
+
+# ---------------------------------------------------------------------------
+# Case 12: --since with invalid version exits 1 with clear error
+# ---------------------------------------------------------------------------
+case_start "--since with non-semver value rejects with helpful error"
+run_script "2.1.129" "2.1.129" "0" --since not-a-version
+assert "since-bad" "exits 1"         '[[ "$STATUS" == "1" ]]' && \
+assert "since-bad" "explains format" 'grep -q -- "--since expects" <<< "$OUTPUT"' && \
+case_end
+
+# ---------------------------------------------------------------------------
+# Case 13: --since without a value exits 2
+# ---------------------------------------------------------------------------
+case_start "--since with no value exits 2"
+set +e
+NOVAL_OUT=$("$SCRIPT" --since 2>&1)
+NOVAL_STATUS=$?
+set -e
+OUTPUT="$NOVAL_OUT"; STATUS="$NOVAL_STATUS"
+assert "since-noval" "exits 2"         '[[ "$STATUS" == "2" ]]' && \
+assert "since-noval" "explains needed" 'grep -q "requires a version" <<< "$OUTPUT"' && \
+case_end
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 TOTAL=$((PASS + FAIL))

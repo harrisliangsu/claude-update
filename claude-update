@@ -21,10 +21,21 @@ By default each version is shown on its own page (less multi-file mode):
   /pattern        search
   q               quit
 
+Use --combined to flatten all versions into one scrollable buffer instead
+(useful for cross-version search or piping to grep).
+
 Options:
-  -c, --combined   merge all versions into a single scrollable buffer
-  -P, --no-pager   print everything plainly, no interactive pager
-  -h, --help       show this help
+  -n, --no-update     show CHANGELOG for the installed version, skip `claude update`
+      --since VER     set the CHANGELOG range lower bound (exclusive); pairs with -n
+  -c, --combined      merge all versions into a single scrollable buffer
+  -P, --no-pager      print everything plainly, no interactive pager
+  -h, --help          show this help
+
+Examples:
+  claude-update                    # update and show what's new
+  claude-update -n                 # show current version's CHANGELOG, no update
+  claude-update -n --since 2.1.120 # show 2.1.120..current, no update
+  claude-update --since 2.1.120    # update, then show 2.1.120..new
 
 Environment variables:
   CLAUDE_UPDATE_CHANGELOG_URL   override CHANGELOG source
@@ -43,17 +54,31 @@ fi
 
 NO_PAGER=0
 COMBINED=0
-for arg in "$@"; do
-  case "$arg" in
-    -P|--no-pager) NO_PAGER=1 ;;
-    -c|--combined) COMBINED=1 ;;
-    -h|--help)     usage; exit 0 ;;
-    *) printf '%sclaude-update: unknown argument: %s%s\n\n' "$YELLOW" "$arg" "$RESET" >&2
-       usage >&2; exit 2 ;;
+NO_UPDATE=0
+SINCE=""
+arg_error() {
+  printf '%sclaude-update: %s%s\n\n' "$YELLOW" "$*" "$RESET" >&2
+  usage >&2
+  exit 2
+}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -P|--no-pager)  NO_PAGER=1; shift ;;
+    -c|--combined)  COMBINED=1; shift ;;
+    -n|--no-update) NO_UPDATE=1; shift ;;
+    --since)        [[ $# -ge 2 ]] || arg_error "--since requires a version (e.g. --since 2.1.120)"
+                    SINCE="$2"; shift 2 ;;
+    --since=*)      SINCE="${1#--since=}"; shift ;;
+    -h|--help)      usage; exit 0 ;;
+    *)              arg_error "unknown argument: $1" ;;
   esac
 done
 
 die() { printf '%sclaude-update: %s%s\n' "$YELLOW" "$*" "$RESET" >&2; exit 1; }
+
+if [[ -n "$SINCE" && ! "$SINCE" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+  die "--since expects a version like X.Y.Z, got: $SINCE"
+fi
 
 command -v claude >/dev/null 2>&1 || die "claude CLI not found; install Claude Code first"
 command -v curl   >/dev/null 2>&1 || die "curl not found"
@@ -73,22 +98,34 @@ fetch_pid=$!
 old_version="$(current_version)"
 printf '%scurrent version: %s%s%s\n' "$CYAN" "$BOLD" "${old_version:-not installed}" "$RESET"
 
-# Stream `claude update` straight to the terminal so users see real-time progress.
-printf '%s▶ running claude update ...%s\n' "$CYAN" "$RESET"
-if ! claude update; then
-  kill "$fetch_pid" 2>/dev/null || true
-  wait "$fetch_pid" 2>/dev/null || true
-  die "claude update failed"
-fi
+if [[ "$NO_UPDATE" == "1" ]]; then
+  # View-only mode: skip `claude update`, but keep the background CHANGELOG fetch.
+  new_version="$old_version"
+else
+  # Stream `claude update` straight to the terminal so users see real-time progress.
+  printf '%s▶ running claude update ...%s\n' "$CYAN" "$RESET"
+  if ! claude update; then
+    kill "$fetch_pid" 2>/dev/null || true
+    wait "$fetch_pid" 2>/dev/null || true
+    die "claude update failed"
+  fi
 
-new_version="$(current_version)"
-printf '%snew version:     %s%s%s\n' "$CYAN" "$BOLD" "${new_version:-unknown}" "$RESET"
+  new_version="$(current_version)"
+  printf '%snew version:     %s%s%s\n' "$CYAN" "$BOLD" "${new_version:-unknown}" "$RESET"
+fi
 
 if [[ -z "$new_version" ]]; then
-  die "could not detect new version; skipping CHANGELOG display"
+  die "could not detect installed version; cannot determine CHANGELOG range"
 fi
 
-if [[ -n "$old_version" && "$old_version" == "$new_version" ]]; then
+# --since (if provided) overrides the lower bound of the slice.
+if [[ -n "$SINCE" ]]; then
+  old_version="$SINCE"
+fi
+
+# Show "already on latest" only when we actually ran update and ended up at the
+# same version — not for --no-update (expected), and not when --since pinned a range.
+if [[ "$NO_UPDATE" == "0" && -z "$SINCE" && -n "$old_version" && "$old_version" == "$new_version" ]]; then
   printf '%s✓ already on latest; showing this version'\''s CHANGELOG section%s\n' "$GREEN" "$RESET"
 fi
 
