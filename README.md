@@ -1,12 +1,13 @@
 # claude-update
 
 [![CI](https://github.com/harrisliangsu/claude-update/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisliangsu/claude-update/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/claude-update.svg)](https://www.npmjs.com/package/claude-update)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-yellow.svg)](#dependencies)
 [![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#dependencies)
 
 > Run `claude update` and read what actually changed, in one shot.
-> [中文 README](README.zh.md) · [Discussions](https://github.com/harrisliangsu/claude-update/discussions) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
+> [中文 README](README.zh.md) · [npm](https://www.npmjs.com/package/claude-update) · [Discussions](https://github.com/harrisliangsu/claude-update/discussions) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
 
 `claude-update` runs `claude update`, then pulls the official
 [CHANGELOG.md](https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md)
@@ -18,13 +19,13 @@ critical path is the upgrade itself.
 
 ## Install
 
-Run once with npm:
+Run once from the npm registry:
 
 ```bash
 npx claude-update
 ```
 
-Install globally:
+Install globally from the npm registry:
 
 ```bash
 npm install -g claude-update
@@ -41,10 +42,10 @@ PREFIX=/usr/local ./install.sh     # or pick another prefix
 ## Usage
 
 ```bash
-./claude-update              # default: per-version browsing (one page per version)
-./claude-update --combined   # merge all versions into a single scrollable buffer
-./claude-update --no-pager   # plain print, no interactive pager
-./claude-update -h           # help
+claude-update              # default: per-version browsing (one page per version)
+claude-update --combined   # merge all versions into a single scrollable buffer
+claude-update --no-pager   # plain print, no interactive pager
+claude-update -h           # help
 ```
 
 ### Per-version browsing (default)

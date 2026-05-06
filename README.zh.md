@@ -1,12 +1,13 @@
 # claude-update
 
 [![CI](https://github.com/harrisliangsu/claude-update/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisliangsu/claude-update/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/claude-update.svg)](https://www.npmjs.com/package/claude-update)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-yellow.svg)](#%E4%BE%9D%E8%B5%96)
 [![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#%E4%BE%9D%E8%B5%96)
 
 > 把 `claude update` 和「这次更新带来了什么」拼在一起。
-> [English README](README.md) · [Discussions](https://github.com/harrisliangsu/claude-update/discussions) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
+> [English README](README.md) · [npm](https://www.npmjs.com/package/claude-update) · [Discussions](https://github.com/harrisliangsu/claude-update/discussions) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
 
 执行 `claude update`，再从官方仓库拉取
 [CHANGELOG.md](https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md)，
@@ -16,13 +17,13 @@ CHANGELOG 与升级**并发拉取**，关键路径只有升级本身。
 
 ## 安装
 
-通过 npm 单次运行：
+从 npm registry 单次运行：
 
 ```bash
 npx claude-update
 ```
 
-全局安装：
+从 npm registry 全局安装：
 
 ```bash
 npm install -g claude-update
@@ -39,10 +40,10 @@ PREFIX=/usr/local ./install.sh     # 自定义前缀
 ## 使用
 
 ```bash
-./claude-update              # 默认：逐版本浏览（每个版本独立一页）
-./claude-update --combined   # 合并所有版本到一页里滚动
-./claude-update --no-pager   # 直接打印全部，不进入交互
-./claude-update -h           # 帮助
+claude-update              # 默认：逐版本浏览（每个版本独立一页）
+claude-update --combined   # 合并所有版本到一页里滚动
+claude-update --no-pager   # 直接打印全部，不进入交互
+claude-update -h           # 帮助
 ```
 
 ### 逐版本浏览（默认）
