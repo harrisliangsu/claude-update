@@ -84,14 +84,18 @@ assert "happy" "excludes 2.1.120"    '! grep -q "## 2.1.120" <<< "$OUTPUT"' && \
 case_end
 
 # ---------------------------------------------------------------------------
-# Case 2: already on latest
+# Case 2: already on latest — slice broadens to all earlier versions so :n/:p
+# in the multi-file pager has somewhere to navigate.
 # ---------------------------------------------------------------------------
-case_start "already on latest: 2.1.129 → 2.1.129"
+case_start "already on latest: 2.1.129 → 2.1.129 (broadens to history)"
 run_script "2.1.129" "2.1.129" "0"
 assert "latest" "exits 0"            '[[ "$STATUS" == "0" ]]' && \
 assert "latest" "shows already msg"  'grep -q "already on latest" <<< "$OUTPUT"' && \
+assert "latest" "hint mentions :n"   'grep -q ":n" <<< "$OUTPUT"' && \
 assert "latest" "shows 2.1.129"      'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
-assert "latest" "no 2.1.128"         '! grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+assert "latest" "shows 2.1.128"      'grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+assert "latest" "shows 2.1.120"      'grep -q "## 2.1.120" <<< "$OUTPUT"' && \
+assert "latest" "no 2.1.130-beta1"   '! grep -q "## 2.1.130-beta1" <<< "$OUTPUT"' && \
 case_end
 
 # ---------------------------------------------------------------------------
@@ -170,18 +174,20 @@ case_end
 # ---------------------------------------------------------------------------
 # Case 9: --no-update — skip claude update, show current version's section
 # ---------------------------------------------------------------------------
-case_start "--no-update: skips claude update, shows current version only"
+case_start "--no-update: skips claude update, browses installed + earlier"
 # post/upd_exit are intentionally unreachable values — if --no-update accidentally
 # invokes the stub the test will fail loudly via the assertions below.
 run_script "2.1.129" "9.9.9" "1" --no-update
-assert "noup" "exits 0"              '[[ "$STATUS" == "0" ]]' && \
-assert "noup" "shows current"        'grep -q "current version: 2.1.129" <<< "$OUTPUT"' && \
-assert "noup" "skips update msg"     '! grep -q "running claude update" <<< "$OUTPUT"' && \
-assert "noup" "stub never invoked"   '! grep -q "stub: simulating" <<< "$OUTPUT"' && \
-assert "noup" "no new-version line"  '! grep -q "^new version:" <<< "$OUTPUT"' && \
-assert "noup" "no already-on-latest" '! grep -q "already on latest" <<< "$OUTPUT"' && \
-assert "noup" "shows 2.1.129"        'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
-assert "noup" "no 2.1.128"           '! grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+assert "noup" "exits 0"               '[[ "$STATUS" == "0" ]]' && \
+assert "noup" "shows current"         'grep -q "current version: 2.1.129" <<< "$OUTPUT"' && \
+assert "noup" "skips update msg"      '! grep -q "running claude update" <<< "$OUTPUT"' && \
+assert "noup" "stub never invoked"    '! grep -q "stub: simulating" <<< "$OUTPUT"' && \
+assert "noup" "no new-version line"   '! grep -q "^new version:" <<< "$OUTPUT"' && \
+assert "noup" "no already-on-latest"  '! grep -q "already on latest" <<< "$OUTPUT"' && \
+assert "noup" "shows 2.1.129"         'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
+assert "noup" "shows 2.1.128 (older)" 'grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+assert "noup" "shows 2.1.120 (older)" 'grep -q "## 2.1.120" <<< "$OUTPUT"' && \
+assert "noup" "no 2.1.130-beta1"      '! grep -q "## 2.1.130-beta1" <<< "$OUTPUT"' && \
 case_end
 
 # ---------------------------------------------------------------------------

@@ -10,8 +10,10 @@ usage() {
   cat <<'EOF'
 Usage: claude-update [OPTIONS]
 
-Run `claude update`, then display the CHANGELOG entries covering the
-(old_version, new_version] range that this upgrade brought in.
+Run `claude update`, then show the CHANGELOG. The default slice is
+(old_version, new_version]; if you're already on latest (or pass
+--no-update), all earlier versions are reachable too — :n / :p step
+between them.
 
 By default each version is shown on its own page (less multi-file mode):
   :n / Space      next version
@@ -25,8 +27,8 @@ Use --combined to flatten all versions into one scrollable buffer instead
 (useful for cross-version search or piping to grep).
 
 Options:
-  -n, --no-update     show CHANGELOG for the installed version, skip `claude update`
-      --since VER     set the CHANGELOG range lower bound (exclusive); pairs with -n
+  -n, --no-update     skip `claude update`; show installed version + earlier
+      --since VER     pin the CHANGELOG range lower bound (exclusive)
   -c, --combined      merge all versions into a single scrollable buffer
   -P, --no-pager      print everything plainly, no interactive pager
   -h, --help          show this help
@@ -118,21 +120,32 @@ if [[ -z "$new_version" ]]; then
   die "could not detect installed version; cannot determine CHANGELOG range"
 fi
 
-# --since (if provided) overrides the lower bound of the slice.
+# Snapshot the pre-update version so we can tell apart "already on latest" from
+# "first install" later — both leave $old_version in unhelpful shapes.
+old_initial="$old_version"
+
+# --since (if provided) pins the lower bound of the slice.
 if [[ -n "$SINCE" ]]; then
   old_version="$SINCE"
 fi
 
-# Show "already on latest" only when we actually ran update and ended up at the
-# same version — not for --no-update (expected), and not when --since pinned a range.
-if [[ "$NO_UPDATE" == "0" && -z "$SINCE" && -n "$old_version" && "$old_version" == "$new_version" ]]; then
-  printf '%s✓ already on latest; showing this version'\''s CHANGELOG section%s\n' "$GREEN" "$RESET"
+# Status line: only when we actually ran update and ended up at the same version.
+if [[ "$NO_UPDATE" == "0" && -z "$SINCE" && -n "$old_initial" && "$old_initial" == "$new_version" ]]; then
+  printf '%s✓ already on latest; browse earlier versions with :n / :p%s\n' "$GREEN" "$RESET"
 fi
 
-# First install: old_version was empty. Treat the range as the new version only,
-# otherwise the user gets blasted with the entire CHANGELOG history.
+# Broadening rule: when the slice would otherwise contain only $new_version
+# (already on latest, or --no-update without --since), drop the lower bound so
+# :n / :p in the multi-file pager can step back through history. --since
+# explicitly opts out, and first-install (old_initial empty) is handled below.
+if [[ -z "$SINCE" && -n "$old_initial" && "$old_initial" == "$new_version" ]]; then
+  old_version=""
+fi
+
+# First install: old_initial was empty. Limit the slice to just $new_version so
+# the user isn't blasted with the entire CHANGELOG history on first install.
 first_install=0
-if [[ -z "$old_version" ]]; then
+if [[ -z "$old_initial" ]]; then
   first_install=1
   old_version="$new_version"
 fi
@@ -179,7 +192,11 @@ section="$(awk -v new="$new_version" -v old="$old_version" '
   printing { print }
 ' "$changelog_tmp")"
 
-if [[ -z "${section// /}" ]]; then
+# Use plain `-z`, not `${section// /}` — bash pattern substitution on the section
+# is O(n^2) and the broadened slice can be the full CHANGELOG (~270KB → minutes).
+# awk only emits lines copied from the source, so it never produces whitespace-only
+# output that the looser check would have caught.
+if [[ -z "$section" ]]; then
   printf '%sCHANGELOG has no entry for version %s%s\n' "$YELLOW" "$new_version" "$RESET"
   exit 0
 fi
@@ -206,24 +223,31 @@ if want_interactive && [[ "$COMBINED" == "0" ]] && command -v less >/dev/null 2>
   tmpdir="$(mktemp -d -t claude-update.XXXXXX)"
   trap 'rm -f "$changelog_tmp"; rm -rf "$tmpdir"' EXIT
 
-  # One file per version, named after the version itself so less prompt %f shows
-  # it cleanly. less iterates files in argv order; no need to sort by filename.
-  # while-read instead of mapfile so the script runs on macOS bash 3.2.
+  # Split section into one file per version *and* apply highlighting in a single
+  # awk pass — calling highlight() per-file forks awk N times (≈10s for 280
+  # versions on macOS). Filenames are emitted on stdout in source order; less
+  # iterates argv left-to-right, so no sort needed. while-read instead of
+  # mapfile so the script runs on macOS bash 3.2.
   version_files=()
   while IFS= read -r f; do version_files+=("$f"); done < <(
-    printf '%s\n' "$section" | awk -v dir="$tmpdir" '
+    printf '%s\n' "$section" | awk -v dir="$tmpdir" -v BOLD="$BOLD" \
+        -v MAGENTA="$MAGENTA" -v GREEN="$GREEN" -v RESET="$RESET" '
       /^## / {
         if (out) close(out)
         out = sprintf("%s/%s", dir, $2)
         print out
+        printf "%s%s%s%s\n", BOLD, MAGENTA, $0, RESET > out
+        next
+      }
+      out && /^- / {
+        line = $0
+        sub(/^- /, GREEN "• " RESET, line)
+        print line > out
+        next
       }
       out { print > out }
     '
   )
-
-  for f in "${version_files[@]}"; do
-    highlight < "$f" > "$f.colored" && mv "$f.colored" "$f"
-  done
 
   prompt="Claude Code %f   (%i/%m)   :n next  :p prev  q quit"
   less -R --prompt="$prompt" "${version_files[@]}"
