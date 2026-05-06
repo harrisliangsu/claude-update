@@ -110,17 +110,17 @@ assert "happy" "excludes 2.1.120"    '! grep -q "## 2.1.120" <<< "$OUTPUT"' && \
 case_end
 
 # ---------------------------------------------------------------------------
-# Case 2: already on latest — slice broadens to all earlier versions so :n/:p
-# in the multi-file pager has somewhere to navigate.
+# Case 2: already on latest in pipe mode — no broadening, just the current
+# version's section. The TTY-mode broadening (where :n/:p browses history)
+# can't be exercised here since run_script captures via $() (non-TTY).
 # ---------------------------------------------------------------------------
-case_start "already on latest: 2.1.129 → 2.1.129 (broadens to history)"
+case_start "already on latest: 2.1.129 → 2.1.129 (pipe mode, no broadening)"
 run_script "2.1.129" "2.1.129" "0"
 assert "latest" "exits 0"            '[[ "$STATUS" == "0" ]]' && \
 assert "latest" "shows already msg"  'grep -q "already on latest" <<< "$OUTPUT"' && \
-assert "latest" "hint mentions :n"   'grep -q ":n" <<< "$OUTPUT"' && \
+assert "latest" "no :n hint in pipe" '! grep -q ":n /" <<< "$OUTPUT"' && \
 assert "latest" "shows 2.1.129"      'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
-assert "latest" "shows 2.1.128"      'grep -q "## 2.1.128" <<< "$OUTPUT"' && \
-assert "latest" "shows 2.1.120"      'grep -q "## 2.1.120" <<< "$OUTPUT"' && \
+assert "latest" "no 2.1.128"         '! grep -q "## 2.1.128" <<< "$OUTPUT"' && \
 assert "latest" "no 2.1.130-beta1"   '! grep -q "## 2.1.130-beta1" <<< "$OUTPUT"' && \
 case_end
 
@@ -200,7 +200,9 @@ case_end
 # ---------------------------------------------------------------------------
 # Case 9: --no-update — skip claude update, show current version's section
 # ---------------------------------------------------------------------------
-case_start "--no-update: skips claude update, browses installed + earlier"
+case_start "--no-update in pipe mode: skips claude update, current version only"
+# Captured via $() → non-TTY → broadening suppressed → only the current version.
+# (TTY mode broadens to history so :n/:p has somewhere to go.)
 # post/upd_exit are intentionally unreachable values — if --no-update accidentally
 # invokes the stub the test will fail loudly via the assertions below.
 run_script "2.1.129" "9.9.9" "1" --no-update
@@ -211,8 +213,8 @@ assert "noup" "stub never invoked"    '! grep -q "stub: simulating" <<< "$OUTPUT
 assert "noup" "no new-version line"   '! grep -q "^new version:" <<< "$OUTPUT"' && \
 assert "noup" "no already-on-latest"  '! grep -q "already on latest" <<< "$OUTPUT"' && \
 assert "noup" "shows 2.1.129"         'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
-assert "noup" "shows 2.1.128 (older)" 'grep -q "## 2.1.128" <<< "$OUTPUT"' && \
-assert "noup" "shows 2.1.120 (older)" 'grep -q "## 2.1.120" <<< "$OUTPUT"' && \
+assert "noup" "no 2.1.128 (no broad)" '! grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+assert "noup" "no 2.1.120 (no broad)" '! grep -q "## 2.1.120" <<< "$OUTPUT"' && \
 assert "noup" "no 2.1.130-beta1"      '! grep -q "## 2.1.130-beta1" <<< "$OUTPUT"' && \
 case_end
 
@@ -272,15 +274,41 @@ case_end
 # ---------------------------------------------------------------------------
 # Case 13b: pipe mode + --no-update — same routing, no update progress
 # ---------------------------------------------------------------------------
-case_start "pipe mode + --no-update: clean Markdown only"
+case_start "pipe mode + --no-update: clean Markdown, current version only"
+# Pipe mode → no broadening → 2.1.129 only, no older versions bloating stdout.
+# This is what makes `claude-update -n | claude -p '翻译'` actually fast.
 run_script_split "2.1.129" "9.9.9" "1" --no-update
 assert "pipe-noup" "exits 0"             '[[ "$STATUS" == "0" ]]' && \
 assert "pipe-noup" "stdout has 2.1.129"  'grep -q "## 2.1.129" <<< "$OUT_OUT"' && \
-assert "pipe-noup" "stdout has 2.1.120"  'grep -q "## 2.1.120" <<< "$OUT_OUT"' && \
+assert "pipe-noup" "stdout has no 2.1.128" '! grep -q "## 2.1.128" <<< "$OUT_OUT"' && \
+assert "pipe-noup" "stdout has no 2.1.120" '! grep -q "## 2.1.120" <<< "$OUT_OUT"' && \
 assert "pipe-noup" "no stub on stdout"   '! grep -q "stub:" <<< "$OUT_OUT"' && \
 assert "pipe-noup" "no stub on stderr"   '! grep -q "stub:" <<< "$OUT_ERR"' && \
 assert "pipe-noup" "no chrome on stdout" '! grep -q "current version" <<< "$OUT_OUT"' && \
 assert "pipe-noup" "first stdout line ##" '[[ "$(printf "%s\n" "$OUT_OUT" | grep -m1 -v "^$")" =~ ^\#\# ]]' && \
+case_end
+
+# ---------------------------------------------------------------------------
+# Case 13d: -v / --version prints script version without invoking claude
+# ---------------------------------------------------------------------------
+case_start "-v prints script version and exits 0"
+set +e
+V_OUT=$("$SCRIPT" -v 2>&1)
+V_STATUS=$?
+set -e
+OUTPUT="$V_OUT"; STATUS="$V_STATUS"
+assert "ver" "exits 0"               '[[ "$STATUS" == "0" ]]' && \
+assert "ver" "matches semver"        '[[ "$OUTPUT" =~ ^claude-update[[:space:]][0-9]+\.[0-9]+\.[0-9]+ ]]' && \
+case_end
+
+case_start "--version equivalent to -v"
+set +e
+V_OUT=$("$SCRIPT" --version 2>&1)
+V_STATUS=$?
+set -e
+OUTPUT="$V_OUT"; STATUS="$V_STATUS"
+assert "ver-long" "exits 0"          '[[ "$STATUS" == "0" ]]' && \
+assert "ver-long" "matches semver"   '[[ "$OUTPUT" =~ ^claude-update[[:space:]][0-9]+\.[0-9]+\.[0-9]+ ]]' && \
 case_end
 
 # ---------------------------------------------------------------------------
@@ -291,7 +319,6 @@ run_script "2.1.129" "9.9.9" "1" -nP
 assert "combo-nP" "exits 0"            '[[ "$STATUS" == "0" ]]' && \
 assert "combo-nP" "no claude update"   '! grep -q "stub: simulating" <<< "$OUTPUT"' && \
 assert "combo-nP" "shows 2.1.129"      'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
-assert "combo-nP" "shows 2.1.128"      'grep -q "## 2.1.128" <<< "$OUTPUT"' && \
 case_end
 
 case_start "combined short flags: -cP behaves like -c -P"
@@ -307,7 +334,7 @@ run_script "2.1.129" "9.9.9" "1" -cnP
 assert "combo-cnP" "exits 0"             '[[ "$STATUS" == "0" ]]' && \
 assert "combo-cnP" "no claude update"    '! grep -q "stub: simulating" <<< "$OUTPUT"' && \
 assert "combo-cnP" "shows 2.1.129"       'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
-assert "combo-cnP" "shows 2.1.120 (br)"  'grep -q "## 2.1.120" <<< "$OUTPUT"' && \
+assert "combo-cnP" "has banner (-c)"     'grep -q "what'\''s new" <<< "$OUTPUT"' && \
 case_end
 
 case_start "combined short flags do not chew up version-like tokens"

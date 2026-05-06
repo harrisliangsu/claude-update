@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # claude-update — run `claude update` and pretty-print the matching CHANGELOG sections.
 # https://github.com/harrisliangsu/claude-update
-# version: 0.1.0
 set -euo pipefail
+
+CLAUDE_UPDATE_VERSION="0.2.0"
 
 CHANGELOG_URL="${CLAUDE_UPDATE_CHANGELOG_URL:-https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md}"
 
@@ -31,7 +32,10 @@ Options:
       --since VER     pin the CHANGELOG range lower bound (exclusive)
   -c, --combined      merge all versions into a single scrollable buffer
   -P, --no-pager      print everything plainly, no interactive pager
+  -v, --version       print claude-update's own version and exit
   -h, --help          show this help
+
+Short flags can be combined: -nP ≡ -n -P, -cnP ≡ -c -n -P.
 
 Examples:
   claude-update                    # update and show what's new
@@ -41,10 +45,14 @@ Examples:
 
 Pipe mode:
   When stdout is not a terminal, status lines and `claude update`
-  progress are routed to stderr and the section is emitted as raw
-  Markdown (no ANSI, original `- ` bullets):
+  progress are routed to stderr, and the section is emitted as raw
+  Markdown (no ANSI, original `- ` bullets). The "browse earlier
+  versions" broadening is suppressed too — pipe consumers can't
+  navigate, and a 270KB dump rarely matches intent. Use --since to
+  widen the range.
 
       claude-update -n | claude -p '翻译为简体中文'
+      claude-update -n --since 2.1.120 | claude -p 'translate to JP'
       claude-update -n --since 2.1.120 > whats-new.md
 
 Environment variables:
@@ -105,6 +113,7 @@ while [[ $# -gt 0 ]]; do
     --since)        [[ $# -ge 2 ]] || arg_error "--since requires a version (e.g. --since 2.1.120)"
                     SINCE="$2"; shift 2 ;;
     --since=*)      SINCE="${1#--since=}"; shift ;;
+    -v|--version)   printf 'claude-update %s\n' "$CLAUDE_UPDATE_VERSION"; exit 0 ;;
     -h|--help)      usage; exit 0 ;;
     *)              arg_error "unknown argument: $1" ;;
   esac
@@ -164,15 +173,24 @@ if [[ -n "$SINCE" ]]; then
 fi
 
 # Status line: only when we actually ran update and ended up at the same version.
+# Drop the :n/:p hint in pipe mode — there's no pager to navigate, and the
+# broadening that makes :n/:p useful is also suppressed below.
 if [[ "$NO_UPDATE" == "0" && -z "$SINCE" && -n "$old_initial" && "$old_initial" == "$new_version" ]]; then
-  printf '%s✓ already on latest; browse earlier versions with :n / :p%s\n' "$GREEN" "$RESET" >&3
+  if [[ -t 1 ]]; then
+    printf '%s✓ already on latest; browse earlier versions with :n / :p%s\n' "$GREEN" "$RESET" >&3
+  else
+    printf '%s✓ already on latest%s\n' "$GREEN" "$RESET" >&3
+  fi
 fi
 
 # Broadening rule: when the slice would otherwise contain only $new_version
 # (already on latest, or --no-update without --since), drop the lower bound so
-# :n / :p in the multi-file pager can step back through history. --since
-# explicitly opts out, and first-install (old_initial empty) is handled below.
-if [[ -z "$SINCE" && -n "$old_initial" && "$old_initial" == "$new_version" ]]; then
+# :n / :p in the multi-file pager can step back through history. Suppress in
+# pipe mode — the consumer can't navigate, and dumping the full ~270KB
+# CHANGELOG to stdout rarely matches intent (`| claude -p '翻译'`, `> file.md`).
+# --since explicitly opts out either way; first-install (old_initial empty) is
+# handled below.
+if [[ -z "$SINCE" && -n "$old_initial" && "$old_initial" == "$new_version" && -t 1 ]]; then
   old_version=""
 fi
 
