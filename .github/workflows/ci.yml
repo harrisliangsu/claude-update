@@ -29,6 +29,9 @@ jobs:
       - name: run tests
         run: ./test/test.sh
 
+      - name: verify npm package
+        run: npm pack --dry-run
+
       - name: shellcheck (informational)
         run: |
           if ! command -v shellcheck >/dev/null 2>&1; then

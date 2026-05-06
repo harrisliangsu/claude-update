@@ -16,6 +16,28 @@ each version on its own scrollable page so you can step through them with `:n` /
 The CHANGELOG is fetched in parallel with the upgrade, so the only thing on the
 critical path is the upgrade itself.
 
+## Install
+
+Run once with npm:
+
+```bash
+npx claude-update
+```
+
+Install globally:
+
+```bash
+npm install -g claude-update
+claude-update
+```
+
+Install from a local checkout:
+
+```bash
+./install.sh                       # symlink into ~/.local/bin (default)
+PREFIX=/usr/local ./install.sh     # or pick another prefix
+```
+
 ## Usage
 
 ```bash
@@ -67,18 +89,9 @@ is still shown.
 - **Update succeeds, CHANGELOG fails** — the upgrade still completes; only the
   CHANGELOG display step errors out.
 
-## Install to PATH
-
-```bash
-./install.sh                       # symlink into ~/.local/bin (default)
-PREFIX=/usr/local ./install.sh     # or pick another prefix
-```
-
-After that, `claude-update` is callable from anywhere.
-
 ## Environment variables
 
-- `CLAUDE_UPDATE_CHANGELOG_URL` — override the CHANGELOG source (internal mirrors,
+- `CLAUDE_UPDATE_CHANGELOG_URL` — override the CHANGELOG source (mirrors,
   testing).
 - `CLAUDE_UPDATE_PAGER` / `PAGER` — pager command for `--combined` mode
   (default `less -RFX`).
@@ -87,6 +100,7 @@ After that, `claude-update` is callable from anywhere.
 
 ```bash
 ./test/test.sh
+npm pack --dry-run
 ```
 
 Pure bash, no external test framework. Stubs the `claude` CLI and serves a

@@ -1,0 +1,41 @@
+{
+  "name": "claude-update",
+  "version": "0.2.0",
+  "description": "Run claude update and show the matching Claude Code CHANGELOG entries.",
+  "license": "MIT",
+  "homepage": "https://github.com/harrisliangsu/claude-update#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harrisliangsu/claude-update.git"
+  },
+  "bugs": {
+    "url": "https://github.com/harrisliangsu/claude-update/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "changelog",
+    "cli",
+    "update"
+  ],
+  "bin": {
+    "claude-update": "claude-update"
+  },
+  "files": [
+    "claude-update",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "scripts": {
+    "syntax": "bash -n claude-update install.sh test/test.sh test/stub/claude",
+    "version:check": "test \"$(node -p \"require('./package.json').version\")\" = \"$(./claude-update --version | awk '{print $2}')\"",
+    "test": "./test/test.sh",
+    "prepack": "npm run syntax && npm run version:check",
+    "prepublishOnly": "npm test"
+  }
+}

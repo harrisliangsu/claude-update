@@ -14,6 +14,28 @@
 
 CHANGELOG 与升级**并发拉取**，关键路径只有升级本身。
 
+## 安装
+
+通过 npm 单次运行：
+
+```bash
+npx claude-update
+```
+
+全局安装：
+
+```bash
+npm install -g claude-update
+claude-update
+```
+
+从本地源码安装：
+
+```bash
+./install.sh                       # 默认链接到 ~/.local/bin
+PREFIX=/usr/local ./install.sh     # 自定义前缀
+```
+
 ## 使用
 
 ```bash
@@ -59,24 +81,16 @@ Claude Code 2.1.129   (1/3)   :n next  :p prev  q quit
 - **预发布版本**：`2.1.130-beta1` 按 release 部分排序，stderr 单行提示存在 prerelease。
 - **升级成功但 CHANGELOG 拉取失败**：升级仍完成，只在展示阶段报错。
 
-## 安装到 PATH
-
-```bash
-./install.sh                       # 默认链接到 ~/.local/bin
-PREFIX=/usr/local ./install.sh     # 自定义前缀
-```
-
-之后任意目录直接执行 `claude-update`。
-
 ## 环境变量
 
-- `CLAUDE_UPDATE_CHANGELOG_URL`：覆盖 CHANGELOG 来源（内网镜像、测试）。
+- `CLAUDE_UPDATE_CHANGELOG_URL`：覆盖 CHANGELOG 来源（镜像、测试）。
 - `CLAUDE_UPDATE_PAGER` / `PAGER`：覆盖 pager 命令，默认 `less -RFX`。
 
 ## 测试
 
 ```bash
 ./test/test.sh
+npm pack --dry-run
 ```
 
 纯 bash，零测试框架依赖。Stub `claude` CLI、`file://` 本地 fixture CHANGELOG，
