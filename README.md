@@ -9,8 +9,17 @@
 ## 使用
 
 ```bash
-./claude-update
+./claude-update              # 默认走 pager，可上下滚动
+./claude-update --no-pager   # 直接打印
+./claude-update -h           # 帮助
 ```
+
+更新说明默认通过 `less -RFX` 展示：
+- 不足一屏会直接退出（不进入交互），不打扰短更新
+- 超过一屏可用 `↑/↓/Space/PgDn/q` 滚动浏览，颜色高亮保留
+- 退出 less 后输出仍留在终端
+
+非 TTY（管道、CI）下自动跳过 pager。
 
 输出示例：
 
@@ -43,6 +52,7 @@ PREFIX=/usr/local ./install.sh     # 或自定义前缀
 ## 环境变量
 
 - `CLAUDE_UPDATE_CHANGELOG_URL`：覆盖 CHANGELOG 来源（用于内网镜像或测试）。
+- `CLAUDE_UPDATE_PAGER` / `PAGER`：覆盖 pager 命令，默认 `less -RFX`。
 
 ## 依赖
 

@@ -4,6 +4,31 @@ set -euo pipefail
 
 CHANGELOG_URL="${CLAUDE_UPDATE_CHANGELOG_URL:-https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md}"
 
+NO_PAGER=0
+usage() {
+  cat <<'EOF'
+用法: claude-update [选项]
+
+执行 `claude update`，然后打印 CHANGELOG 中 (旧版本, 新版本] 的更新说明。
+更新说明默认走 pager（less -RFX）以便滚动浏览。
+
+选项:
+  -P, --no-pager   直接打印，不走 pager
+  -h, --help       显示本帮助
+
+环境变量:
+  CLAUDE_UPDATE_CHANGELOG_URL   覆盖 CHANGELOG 来源
+  CLAUDE_UPDATE_PAGER / PAGER   覆盖 pager 命令（默认 "less -RFX"）
+EOF
+}
+for arg in "$@"; do
+  case "$arg" in
+    -P|--no-pager) NO_PAGER=1 ;;
+    -h|--help)     usage; exit 0 ;;
+    *) printf 'claude-update: 未知参数: %s\n\n' "$arg" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
 if [[ -t 1 ]]; then
   BOLD=$'\033[1m'; DIM=$'\033[2m'
   GREEN=$'\033[0;32m'; CYAN=$'\033[0;36m'; YELLOW=$'\033[0;33m'; MAGENTA=$'\033[0;35m'
@@ -68,11 +93,22 @@ if [[ -z "${section// /}" ]]; then
   exit 0
 fi
 
-printf '\n%s%s━━━ 更新内容 ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET"
-
 # 简单高亮：## 版本号 标红，- 列表项前缀加色
-printf '%s\n' "$section" | awk -v BOLD="$BOLD" -v MAGENTA="$MAGENTA" -v GREEN="$GREEN" -v RESET="$RESET" '
+highlighted="$(printf '%s\n' "$section" | awk \
+  -v BOLD="$BOLD" -v MAGENTA="$MAGENTA" -v GREEN="$GREEN" -v RESET="$RESET" '
   /^## / { printf "%s%s%s%s\n", BOLD, MAGENTA, $0, RESET; next }
   /^- /  { sub(/^- /, GREEN "• " RESET); print; next }
   { print }
-'
+')"
+
+# 选 pager：非 TTY 或 --no-pager 时直通；否则用 CLAUDE_UPDATE_PAGER / PAGER / less -RFX。
+# less 选项：-R 保留 ANSI 颜色，-F 内容不足一屏直接退出，-X 退出后保留输出不清屏。
+pager_cmd=""
+if [[ "$NO_PAGER" == "0" && -t 1 ]]; then
+  pager_cmd="${CLAUDE_UPDATE_PAGER:-${PAGER:-less -RFX}}"
+fi
+
+{
+  printf '\n%s%s━━━ 更新内容 ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET"
+  printf '%s\n' "$highlighted"
+} | if [[ -n "$pager_cmd" ]]; then eval "$pager_cmd"; else cat; fi
