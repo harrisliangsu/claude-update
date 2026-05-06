@@ -1,47 +1,36 @@
 #!/usr/bin/env bash
-# claude-update — 执行 claude update 并打印 CHANGELOG 中本次更新覆盖的版本说明
+# claude-update — run `claude update` and pretty-print the matching CHANGELOG sections.
 set -euo pipefail
 
 CHANGELOG_URL="${CLAUDE_UPDATE_CHANGELOG_URL:-https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md}"
 
 usage() {
   cat <<'EOF'
-用法: claude-update [选项]
+Usage: claude-update [OPTIONS]
 
-执行 `claude update`，然后展示 CHANGELOG 中 (旧版本, 新版本] 的更新说明。
-默认进入「逐版本浏览」模式：每个版本一个独立页面，可单独滚动，
-按键在版本之间切换。
+Run `claude update`, then display the CHANGELOG entries covering the
+(old_version, new_version] range that this upgrade brought in.
 
-逐版本浏览快捷键（基于 less 多文件模式）:
-  :n / Space      下一版本
-  :p              上一版本
-  ↑ ↓ PgUp PgDn   当前版本内滚动
-  g / G           跳到首/末行
-  /pattern        搜索
-  q               退出
+By default each version is shown on its own page (less multi-file mode):
+  :n / Space      next version
+  :p              previous version
+  ↑ ↓ PgUp PgDn   scroll within the current version
+  g / G           jump to first / last line
+  /pattern        search
+  q               quit
 
-选项:
-  -c, --combined   把所有版本合并到一页里滚动（旧行为）
-  -P, --no-pager   直接打印全部，不进入交互
-  -h, --help       显示本帮助
+Options:
+  -c, --combined   merge all versions into a single scrollable buffer
+  -P, --no-pager   print everything plainly, no interactive pager
+  -h, --help       show this help
 
-环境变量:
-  CLAUDE_UPDATE_CHANGELOG_URL   覆盖 CHANGELOG 来源
-  CLAUDE_UPDATE_PAGER / PAGER   --combined 模式下的 pager（默认 "less -RFX"）
+Environment variables:
+  CLAUDE_UPDATE_CHANGELOG_URL   override CHANGELOG source
+  CLAUDE_UPDATE_PAGER / PAGER   pager command for --combined (default "less -RFX")
 EOF
 }
 
-NO_PAGER=0
-COMBINED=0
-for arg in "$@"; do
-  case "$arg" in
-    -P|--no-pager) NO_PAGER=1 ;;
-    -c|--combined) COMBINED=1 ;;
-    -h|--help)     usage; exit 0 ;;
-    *) printf 'claude-update: 未知参数: %s\n\n' "$arg" >&2; usage >&2; exit 2 ;;
-  esac
-done
-
+# Colors live above arg parsing because the unknown-arg error path uses $YELLOW.
 if [[ -t 1 ]]; then
   BOLD=$'\033[1m'; DIM=$'\033[2m'
   GREEN=$'\033[0;32m'; CYAN=$'\033[0;36m'; YELLOW=$'\033[0;33m'; MAGENTA=$'\033[0;35m'
@@ -50,63 +39,113 @@ else
   BOLD=""; DIM=""; GREEN=""; CYAN=""; YELLOW=""; MAGENTA=""; RESET=""
 fi
 
+NO_PAGER=0
+COMBINED=0
+for arg in "$@"; do
+  case "$arg" in
+    -P|--no-pager) NO_PAGER=1 ;;
+    -c|--combined) COMBINED=1 ;;
+    -h|--help)     usage; exit 0 ;;
+    *) printf '%sclaude-update: unknown argument: %s%s\n\n' "$YELLOW" "$arg" "$RESET" >&2
+       usage >&2; exit 2 ;;
+  esac
+done
+
 die() { printf '%sclaude-update: %s%s\n' "$YELLOW" "$*" "$RESET" >&2; exit 1; }
 
-command -v claude >/dev/null 2>&1 || die "未找到 claude CLI，请先安装 Claude Code"
-command -v curl   >/dev/null 2>&1 || die "未找到 curl"
+command -v claude >/dev/null 2>&1 || die "claude CLI not found; install Claude Code first"
+command -v curl   >/dev/null 2>&1 || die "curl not found"
 
 current_version() {
   claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true
 }
 
-old_version="$(current_version)"
-printf '%s当前版本：%s%s%s\n' "$CYAN" "$BOLD" "${old_version:-未安装}" "$RESET"
+# Prefetch CHANGELOG concurrently with `claude update`. Network on both sides usually
+# overlaps, and we still know the upgrade outcome even if curl fails later.
+changelog_tmp="$(mktemp -t claude-update-changelog.XXXXXX)"
+trap 'rm -f "$changelog_tmp"' EXIT
 
-printf '%s▶ 执行 claude update ...%s\n' "$CYAN" "$RESET"
-update_output="$(claude update 2>&1)" || {
-  printf '%s\n' "$update_output"
-  die "claude update 执行失败"
-}
-printf '%s%s%s\n' "$DIM" "$update_output" "$RESET"
+curl -fsSL --max-time 15 "$CHANGELOG_URL" > "$changelog_tmp" 2>/dev/null &
+fetch_pid=$!
+
+old_version="$(current_version)"
+printf '%scurrent version: %s%s%s\n' "$CYAN" "$BOLD" "${old_version:-not installed}" "$RESET"
+
+# Stream `claude update` straight to the terminal so users see real-time progress.
+printf '%s▶ running claude update ...%s\n' "$CYAN" "$RESET"
+if ! claude update; then
+  kill "$fetch_pid" 2>/dev/null || true
+  wait "$fetch_pid" 2>/dev/null || true
+  die "claude update failed"
+fi
 
 new_version="$(current_version)"
-printf '%s更新后版本：%s%s%s\n' "$CYAN" "$BOLD" "${new_version:-未知}" "$RESET"
+printf '%snew version:     %s%s%s\n' "$CYAN" "$BOLD" "${new_version:-unknown}" "$RESET"
 
 if [[ -z "$new_version" ]]; then
-  die "无法获取更新后的版本号，跳过 CHANGELOG 展示"
+  die "could not detect new version; skipping CHANGELOG display"
 fi
 
 if [[ -n "$old_version" && "$old_version" == "$new_version" ]]; then
-  printf '%s✓ 已是最新版本，仍展示该版本的 CHANGELOG%s\n' "$GREEN" "$RESET"
+  printf '%s✓ already on latest; showing this version'\''s CHANGELOG section%s\n' "$GREEN" "$RESET"
 fi
 
-printf '%s▶ 拉取 CHANGELOG ...%s\n' "$CYAN" "$RESET"
-changelog="$(curl -fsSL --max-time 15 "$CHANGELOG_URL")" || die "无法获取 CHANGELOG: $CHANGELOG_URL"
+# First install: old_version was empty. Treat the range as the new version only,
+# otherwise the user gets blasted with the entire CHANGELOG history.
+first_install=0
+if [[ -z "$old_version" ]]; then
+  first_install=1
+  old_version="$new_version"
+fi
 
-# 切出 (old_version, new_version] 区间。
-# 用 semver 数值比较，避免 old 不在 CHANGELOG 中时一直打到底。
-section="$(printf '%s\n' "$changelog" | awk -v new="$new_version" -v old="${old_version:-0.0.0}" '
-  function ver_num(v,    a) {
+printf '%s▶ fetching CHANGELOG ...%s\n' "$CYAN" "$RESET"
+if ! wait "$fetch_pid"; then
+  die "could not fetch CHANGELOG: $CHANGELOG_URL"
+fi
+changelog="$(cat "$changelog_tmp")"
+[[ -n "$changelog" ]] || die "CHANGELOG is empty"
+
+# Heads-up if the CHANGELOG contains prerelease tags; the slicer below treats them
+# as their release version (e.g. 2.1.130-beta1 sorts the same as 2.1.130).
+prerelease_seen="$(printf '%s\n' "$changelog" | awk '
+  /^## / && $2 ~ /^[0-9]+\.[0-9]+\.[0-9]+-/ { print $2 }
+')"
+if [[ -n "$prerelease_seen" ]]; then
+  printf '%snote: prerelease tags sorted by their release number: %s%s\n' \
+    "$DIM" "$(echo "$prerelease_seen" | tr '\n' ' ')" "$RESET" >&2
+fi
+
+# Slice (old_version, new_version] using semver numeric comparison.
+# Prereleases like X.Y.Z-beta1 are accepted: trailing non-digits in the patch are
+# stripped before comparison. Headings that don't look like X.Y.Z* are ignored.
+section="$(printf '%s\n' "$changelog" | awk -v new="$new_version" -v old="$old_version" '
+  function ver_num(v,    a, last) {
     if (split(v, a, ".") != 3) return -1
-    return a[1]*1000000 + a[2]*1000 + a[3]
+    last = a[3]
+    sub(/[^0-9].*/, "", last)
+    if (last == "") return -1
+    return a[1]*1000000 + a[2]*1000 + last
   }
   BEGIN { new_n = ver_num(new); old_n = ver_num(old) }
   /^## / {
-    v = $2
-    n = ver_num(v)
-    if (n < 0)            { next }      # 不像版本号的标题，忽略
+    n = ver_num($2)
+    if (n < 0)            { next }
     if (n == new_n)       { printing = 1 }
-    else if (n <= old_n)  { exit }      # 已经回到旧版本或更早，停
+    else if (n <= old_n)  { exit }
   }
   printing { print }
 ')"
 
 if [[ -z "${section// /}" ]]; then
-  printf '%s未在 CHANGELOG 中找到版本 %s 的说明%s\n' "$YELLOW" "$new_version" "$RESET"
+  printf '%sCHANGELOG has no entry for version %s%s\n' "$YELLOW" "$new_version" "$RESET"
   exit 0
 fi
 
-# 高亮函数：## 版本号 标红，- 列表项前缀加色。
+if [[ "$first_install" == "1" ]]; then
+  printf '%sfirst install: showing only %s%s\n' "$DIM" "$new_version" "$RESET" >&2
+fi
+
+# Highlight ## version headings (bold magenta) and "- " bullets (green).
 highlight() {
   awk -v BOLD="$BOLD" -v MAGENTA="$MAGENTA" -v GREEN="$GREEN" -v RESET="$RESET" '
     /^## / { printf "%s%s%s%s\n", BOLD, MAGENTA, $0, RESET; next }
@@ -120,13 +159,13 @@ want_interactive() {
 }
 
 if want_interactive && [[ "$COMBINED" == "0" ]] && command -v less >/dev/null 2>&1; then
-  # 逐版本浏览：把每个版本切到独立临时文件，交给 less 多文件模式。
+  # Per-version browsing via less multi-file mode.
   tmpdir="$(mktemp -d -t claude-update.XXXXXX)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  trap 'rm -f "$changelog_tmp"; rm -rf "$tmpdir"' EXIT
 
-  # 切片：每个版本一个文件，文件名就是版本号（less prompt %f 显示更干净）。
-  # 按 awk 的输出顺序回传到 version_files；less 按命令行参数顺序遍历，无需字典序。
-  # 用 while read 循环替代 mapfile 以兼容 bash 3.2（macOS 系统 bash）。
+  # One file per version, named after the version itself so less prompt %f shows
+  # it cleanly. less iterates files in argv order; no need to sort by filename.
+  # while-read instead of mapfile so the script runs on macOS bash 3.2.
   version_files=()
   while IFS= read -r f; do version_files+=("$f"); done < <(
     printf '%s\n' "$section" | awk -v dir="$tmpdir" '
@@ -143,17 +182,18 @@ if want_interactive && [[ "$COMBINED" == "0" ]] && command -v less >/dev/null 2>
     highlight < "$f" > "$f.colored" && mv "$f.colored" "$f"
   done
 
-  # less prompt：%f 当前文件名（即版本号），%i 当前序号，%m 总数。
-  prompt="Claude Code %f   (%i/%m)   :n 下一版  :p 上一版  q 退出"
+  prompt="Claude Code %f   (%i/%m)   :n next  :p prev  q quit"
   less -R --prompt="$prompt" "${version_files[@]}"
 else
-  # --combined / --no-pager / 非 TTY / 没有 less：合并打印，可选走 pager。
+  # --combined / --no-pager / non-TTY / no less: merge and optionally pipe to a pager.
   pager_cmd=""
   if want_interactive; then
+    # PAGER / CLAUDE_UPDATE_PAGER come from the user's own environment, not untrusted
+    # input; eval is used so users can pass quoted arguments (e.g. "less -Pmy prompt").
     pager_cmd="${CLAUDE_UPDATE_PAGER:-${PAGER:-less -RFX}}"
   fi
   {
-    printf '\n%s%s━━━ 更新内容 ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET"
+    printf '\n%s%s━━━ what'\''s new ━━━%s\n\n' "$BOLD" "$MAGENTA" "$RESET"
     printf '%s\n' "$section" | highlight
   } | if [[ -n "$pager_cmd" ]]; then eval "$pager_cmd"; else cat; fi
 fi

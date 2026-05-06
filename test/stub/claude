@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Test stub for the `claude` CLI. Reads behavior from env vars set by test.sh.
+#
+#   STUB_VERSIONS_FILE  3-line file: pre_version, post_version, update_exit_code
+#   STUB_STATE_FILE     marker file; if absent we report pre, after `update` we report post
+#
+# A blank pre_version makes `claude --version` print nothing (simulates first install).
+
+set -euo pipefail
+
+versions_file="${STUB_VERSIONS_FILE:-}"
+state_file="${STUB_STATE_FILE:-}"
+
+[[ -n "$versions_file" && -n "$state_file" ]] || {
+  echo "stub claude: STUB_VERSIONS_FILE and STUB_STATE_FILE required" >&2
+  exit 99
+}
+
+pre=$(sed -n '1p' "$versions_file")
+post=$(sed -n '2p' "$versions_file")
+upd_exit=$(sed -n '3p' "$versions_file")
+upd_exit=${upd_exit:-0}
+
+case "${1:-}" in
+  --version)
+    if [[ -f "$state_file" ]]; then
+      [[ -n "$post" ]] && echo "$post (Claude Code)"
+    else
+      [[ -n "$pre" ]] && echo "$pre (Claude Code)"
+    fi
+    ;;
+  update)
+    echo "stub: simulating claude update -> $post"
+    if [[ "$upd_exit" == "0" ]]; then
+      touch "$state_file"
+    fi
+    exit "$upd_exit"
+    ;;
+  *)
+    echo "stub claude: unsupported command: $*" >&2
+    exit 99
+    ;;
+esac

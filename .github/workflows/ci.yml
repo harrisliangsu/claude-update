@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu ships bash 5.x; macos ships bash 3.2 — both are supported.
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash version
+        run: bash --version | head -1
+
+      - name: syntax check
+        run: |
+          bash -n claude-update
+          bash -n install.sh
+          bash -n test/test.sh
+          bash -n test/stub/claude
+
+      - name: run tests
+        run: ./test/test.sh
+
+      - name: shellcheck (informational)
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            echo "shellcheck not installed on this runner, skipping"
+            exit 0
+          fi
+          shellcheck claude-update install.sh test/test.sh test/stub/claude || true

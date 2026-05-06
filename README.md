@@ -1,76 +1,100 @@
 # claude-update
 
-一个把 `claude update` 和「这次更新带来了什么」拼在一起的小工具。
+> Run `claude update` and read what actually changed, in one shot.
+> [中文 README](README.zh.md) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
 
-执行 `claude update`，然后从官方仓库拉取
-[CHANGELOG.md](https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md)，
-精确截取「旧版本 → 新版本」之间所有版本的更新说明并彩色打印。
+`claude-update` runs `claude update`, then pulls the official
+[CHANGELOG.md](https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md)
+and prints the entries covering exactly the `(old_version, new_version]` range —
+each version on its own scrollable page so you can step through them with `:n` / `:p`.
 
-## 使用
+The CHANGELOG is fetched in parallel with the upgrade, so the only thing on the
+critical path is the upgrade itself.
+
+## Usage
 
 ```bash
-./claude-update              # 默认：逐版本浏览（每个版本独立一页）
-./claude-update --combined   # 合并所有版本到一页里滚动
-./claude-update --no-pager   # 直接打印全部，不进入交互
-./claude-update -h           # 帮助
+./claude-update              # default: per-version browsing (one page per version)
+./claude-update --combined   # merge all versions into a single scrollable buffer
+./claude-update --no-pager   # plain print, no interactive pager
+./claude-update -h           # help
 ```
 
-### 逐版本浏览（默认）
+### Per-version browsing (default)
 
-把 `(旧版本, 新版本]` 区间内的每个版本切到独立页面，交给 `less` 多文件模式。
-状态栏会显示 `(2/5)` 这样的进度。
+Each version in `(old_version, new_version]` is written to its own page and handed
+to `less` in multi-file mode. The status bar shows the current version and progress
+(e.g. `(2/5)`).
 
-| 按键 | 作用 |
+| Key | Action |
 | --- | --- |
-| `:n` 或 `Space` | 下一版本 |
-| `:p` | 上一版本 |
-| `↑ ↓ PgUp PgDn` | 当前版本内滚动 |
-| `g` / `G` | 跳到首/末行 |
-| `/pattern` | 搜索 |
-| `q` | 退出 |
+| `:n` or `Space` | next version |
+| `:p` | previous version |
+| `↑ ↓ PgUp PgDn` | scroll within the current version |
+| `g` / `G` | jump to first / last line |
+| `/pattern` | search |
+| `q` | quit |
 
-非 TTY（管道、CI）下自动回退到直接打印。
+Non-TTY contexts (pipes, CI) automatically fall back to plain print.
 
-输出示例：
+### Output example
 
 ```
-当前版本：2.1.126
-▶ 执行 claude update ...
-▶ 拉取 CHANGELOG ...
+current version: 2.1.126
+▶ running claude update ...
+▶ fetching CHANGELOG ...
 
-━━━ 更新内容 ━━━
-
-## 2.1.129
-• Added `--plugin-url <url>` ...
-## 2.1.128
-• Bare `/color` (no args) ...
-## 2.1.127
-• ...
+Claude Code 2.1.129   (1/3)   :n next  :p prev  q quit
 ```
 
-如果当前已是最新版本，会展示该版本的 CHANGELOG 单节。
+If you are already on the latest version, the CHANGELOG section for that version
+is still shown.
 
-## 安装到 PATH
+### Edge cases handled
+
+- **Skipped releases** — if your old version isn't listed in the CHANGELOG (Anthropic
+  doesn't publish every patch), the slicer still terminates correctly using semver
+  numeric comparison.
+- **First install** — when no previous version is detected, only the newest version's
+  section is shown instead of dumping the entire history.
+- **Prereleases** — entries like `2.1.130-beta1` are sorted by their release version
+  and a one-line note is printed to stderr so you know they exist.
+- **Update succeeds, CHANGELOG fails** — the upgrade still completes; only the
+  CHANGELOG display step errors out.
+
+## Install to PATH
 
 ```bash
-./install.sh                       # 默认链接到 ~/.local/bin
-PREFIX=/usr/local ./install.sh     # 或自定义前缀
+./install.sh                       # symlink into ~/.local/bin (default)
+PREFIX=/usr/local ./install.sh     # or pick another prefix
 ```
 
-之后可在任意目录直接执行 `claude-update`。
+After that, `claude-update` is callable from anywhere.
 
-## 环境变量
+## Environment variables
 
-- `CLAUDE_UPDATE_CHANGELOG_URL`：覆盖 CHANGELOG 来源（用于内网镜像或测试）。
-- `CLAUDE_UPDATE_PAGER` / `PAGER`：覆盖 pager 命令，默认 `less -RFX`。
+- `CLAUDE_UPDATE_CHANGELOG_URL` — override the CHANGELOG source (internal mirrors,
+  testing).
+- `CLAUDE_UPDATE_PAGER` / `PAGER` — pager command for `--combined` mode
+  (default `less -RFX`).
 
-## 依赖
+## Testing
 
-- `claude` CLI
+```bash
+./test/test.sh
+```
+
+Pure bash, no external test framework. Stubs the `claude` CLI and serves a
+local fixture CHANGELOG via `file://` so the suite runs offline. CI runs it on
+both Ubuntu (bash 5) and macOS (system bash 3.2) on every push.
+
+## Dependencies
+
+- `claude` CLI (Claude Code)
 - `curl`
-- `awk`、`bash 3.2+`（macOS 系统 bash 即可）
-- `less`（逐版本浏览模式需要；缺失时会回退到合并模式）
+- `awk`, `bash 3.2+` (macOS system bash works)
+- `less` (only needed for per-version browsing; absent → falls back to combined mode)
 
-## 许可
+## License
 
-MIT
+[MIT](LICENSE)
