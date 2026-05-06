@@ -284,6 +284,44 @@ assert "pipe-noup" "first stdout line ##" '[[ "$(printf "%s\n" "$OUT_OUT" | grep
 case_end
 
 # ---------------------------------------------------------------------------
+# Case 13c: combined short flags (-nP, -cP) parse the same as separate ones
+# ---------------------------------------------------------------------------
+case_start "combined short flags: -nP behaves like -n -P"
+run_script "2.1.129" "9.9.9" "1" -nP
+assert "combo-nP" "exits 0"            '[[ "$STATUS" == "0" ]]' && \
+assert "combo-nP" "no claude update"   '! grep -q "stub: simulating" <<< "$OUTPUT"' && \
+assert "combo-nP" "shows 2.1.129"      'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
+assert "combo-nP" "shows 2.1.128"      'grep -q "## 2.1.128" <<< "$OUTPUT"' && \
+case_end
+
+case_start "combined short flags: -cP behaves like -c -P"
+run_script "2.1.122" "2.1.129" "0" -cP
+assert "combo-cP" "exits 0"            '[[ "$STATUS" == "0" ]]' && \
+assert "combo-cP" "shows 2.1.129"      'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
+assert "combo-cP" "shows 2.1.123"      'grep -q "## 2.1.123" <<< "$OUTPUT"' && \
+assert "combo-cP" "has banner"         'grep -q "what'\''s new" <<< "$OUTPUT"' && \
+case_end
+
+case_start "combined short flags: -cnP equivalent to -c -n -P"
+run_script "2.1.129" "9.9.9" "1" -cnP
+assert "combo-cnP" "exits 0"             '[[ "$STATUS" == "0" ]]' && \
+assert "combo-cnP" "no claude update"    '! grep -q "stub: simulating" <<< "$OUTPUT"' && \
+assert "combo-cnP" "shows 2.1.129"       'grep -q "## 2.1.129" <<< "$OUTPUT"' && \
+assert "combo-cnP" "shows 2.1.120 (br)"  'grep -q "## 2.1.120" <<< "$OUTPUT"' && \
+case_end
+
+case_start "combined short flags do not chew up version-like tokens"
+# -n2.1.120 contains digits, must stay as one token and hit unknown-arg
+set +e
+COMBO_BAD=$("$SCRIPT" -n2.1.120 2>&1)
+COMBO_BAD_S=$?
+set -e
+OUTPUT="$COMBO_BAD"; STATUS="$COMBO_BAD_S"
+assert "combo-bad" "exits 2"           '[[ "$STATUS" == "2" ]]' && \
+assert "combo-bad" "preserved token"   'grep -q -- "-n2\\.1\\.120" <<< "$OUTPUT"' && \
+case_end
+
+# ---------------------------------------------------------------------------
 # Case 13: --since without a value exits 2
 # ---------------------------------------------------------------------------
 case_start "--since with no value exits 2"

@@ -81,6 +81,22 @@ arg_error() {
   usage >&2
   exit 2
 }
+
+# Pre-expand combined short flags: -nc → -n -c, -cPn → -c -P -n. Long options
+# (--xxx, --since=val) and unknowns containing digits/dashes (-n2.1.120) are
+# left intact so the case loop handles them or rejects them as unknowns.
+expanded_args=()
+for _arg in "$@"; do
+  if [[ "$_arg" =~ ^-[a-zA-Z]{2,}$ ]]; then
+    for (( _i=1; _i<${#_arg}; _i++ )); do
+      expanded_args+=("-${_arg:$_i:1}")
+    done
+  else
+    expanded_args+=("$_arg")
+  fi
+done
+set -- ${expanded_args[@]+"${expanded_args[@]}"}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -P|--no-pager)  NO_PAGER=1; shift ;;
