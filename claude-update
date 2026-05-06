@@ -120,7 +120,11 @@ fi
 # Slice (old_version, new_version] using semver numeric comparison.
 # Prereleases like X.Y.Z-beta1 are accepted: trailing non-digits in the patch are
 # stripped before comparison. Headings that don't look like X.Y.Z* are ignored.
-section="$(printf '%s\n' "$changelog" | awk -v new="$new_version" -v old="$old_version" '
+#
+# Read the CHANGELOG straight from the temp file rather than `printf | awk`: real
+# CHANGELOGs exceed the pipe buffer, and awk's early `exit` would close the pipe
+# while printf is still writing, raising SIGPIPE → "broken pipe" → pipefail abort.
+section="$(awk -v new="$new_version" -v old="$old_version" '
   function ver_num(v,    a, last) {
     if (split(v, a, ".") != 3) return -1
     last = a[3]
@@ -136,7 +140,7 @@ section="$(printf '%s\n' "$changelog" | awk -v new="$new_version" -v old="$old_v
     else if (n <= old_n)  { exit }
   }
   printing { print }
-')"
+' "$changelog_tmp")"
 
 if [[ -z "${section// /}" ]]; then
   printf '%sCHANGELOG has no entry for version %s%s\n' "$YELLOW" "$new_version" "$RESET"
