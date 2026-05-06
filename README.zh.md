@@ -1,7 +1,12 @@
 # claude-update
 
+[![CI](https://github.com/harrisliangsu/claude-update/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisliangsu/claude-update/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-yellow.svg)](#%E4%BE%9D%E8%B5%96)
+[![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#%E4%BE%9D%E8%B5%96)
+
 > 把 `claude update` 和「这次更新带来了什么」拼在一起。
-> [English README](README.md) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
+> [English README](README.md) · [Discussions](https://github.com/harrisliangsu/claude-update/discussions) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
 
 执行 `claude update`，再从官方仓库拉取
 [CHANGELOG.md](https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md)，

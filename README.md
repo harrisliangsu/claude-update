@@ -1,7 +1,12 @@
 # claude-update
 
+[![CI](https://github.com/harrisliangsu/claude-update/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisliangsu/claude-update/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-yellow.svg)](#dependencies)
+[![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#dependencies)
+
 > Run `claude update` and read what actually changed, in one shot.
-> [中文 README](README.zh.md) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
+> [中文 README](README.zh.md) · [Discussions](https://github.com/harrisliangsu/claude-update/discussions) · [Issues](https://github.com/harrisliangsu/claude-update/issues)
 
 `claude-update` runs `claude update`, then pulls the official
 [CHANGELOG.md](https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md)

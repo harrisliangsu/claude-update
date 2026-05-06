@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # claude-update — run `claude update` and pretty-print the matching CHANGELOG sections.
+# https://github.com/harrisliangsu/claude-update
+# version: 0.1.0
 set -euo pipefail
 
 CHANGELOG_URL="${CLAUDE_UPDATE_CHANGELOG_URL:-https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md}"
